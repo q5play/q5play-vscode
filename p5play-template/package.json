@@ -1,12 +1,12 @@
 {
 	"name": "p5play-template",
-	"version": "1.7.0",
+	"version": "1.8.0",
 	"description": "Starter code for p5play projects",
 	"author": "p5play",
 	"license": "CC0",
 	"dependencies": {
-		"p5play": "^3.32.2",
-		"q5": "^3.3.0"
+		"p5play": "^3.33.7",
+		"q5": "^3.5.2"
 	},
 	"scripts": {
 		"v": "npm version patch --force",

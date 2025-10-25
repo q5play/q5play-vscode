@@ -1,6 +1,4 @@
-new Q5();
-
-new Canvas();
+createCanvas();
 world.gravity.y = 10;
 
 let ball = new Sprite();
