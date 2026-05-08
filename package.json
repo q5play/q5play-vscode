@@ -2,19 +2,23 @@
 	"publisher": "quinton-ashley",
 	"author": {
 		"name": "quinton-ashley",
-		"email": "info@p5play.org"
+		"email": "info@q5play.org"
 	},
-	"name": "p5play-vscode",
-	"displayName": "p5play VSCode",
-	"description": "Create and run p5play projects!",
+	"name": "q5play-vscode",
+	"displayName": "q5play VSCode",
+	"description": "Create and run q5play projects!",
 	"main": "extension.js",
-	"icon": "assets/p5play_logo.png",
+	"icon": "assets/q5play_logo.png",
 	"license": "AGPL-3.0",
 	"contributes": {
 		"commands": [
 			{
-				"command": "p5play-vscode.newProject",
-				"title": "p5play: New Project"
+				"command": "q5play-vscode.newProject",
+				"title": "q5play: New Project"
+			},
+			{
+				"command": "q5play-vscode.openRunner",
+				"title": "q5play: Open Runner"
 			}
 		]
 	},
@@ -25,23 +29,25 @@
 		"Education"
 	],
 	"engines": {
-		"vscode": "^1.74.0"
+		"vscode": "^1.119.0"
 	},
 	"keywords": [
-		"p5.play",
+		"q5play",
+		"q5",
+		"q5.js",
+		"q5js",
 		"game engine",
-		"js game",
-		"javascript game",
-		"p5 play",
+		"p5play",
+		"p5.play",
 		"p5",
 		"p5.js",
 		"p5js"
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/quinton-ashley/p5play-vscode.git"
+		"url": "https://github.com/q5play/q5play-vscode.git"
 	},
-	"version": "1.4.6",
+	"version": "1.5.0",
 	"__metadata": {
 		"id": "91a3a7ba-83a7-4910-919a-d1c0a8667c67",
 		"publisherDisplayName": "quinton-ashley",
@@ -57,6 +63,7 @@
 	},
 	"dependencies": {
 		"@bitjson/qr-code": "^1.0.2",
-		"live-server": "^1.2.2"
+		"live-server": "^1.2.2",
+		"selfsigned": "^5.5.0"
 	}
 }

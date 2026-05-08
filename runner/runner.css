@@ -106,9 +106,7 @@ btn {
 	justify-content: center;
 	align-items: center;
 	height: 32px;
-	padding: 2px;
-	padding-left: 16px;
-	padding-right: 16px;
+	padding: 2px 16px;
 	font-size: 16px;
 	font-weight: bold;
 	line-height: 1;
@@ -201,9 +199,12 @@ icon {
 }
 
 #logo img {
+	display: block;
 	width: 48px;
 	height: 48px;
 	padding: 8px;
+	object-fit: cover;
+	max-width: none !important;
 }
 
 .logo-big {
@@ -243,7 +244,6 @@ pre {
 #qr0 {
 	width: 360px;
 	height: 360px;
-	margin: 2em auto;
 	background-color: var(--secondary);
 	border-radius: 5px;
 }
@@ -280,43 +280,8 @@ pre {
 	filter: none;
 }
 
-@media screen and (max-width: 440px) {
-	#topNav {
-		padding: 6px;
-		border-bottom-left-radius: 6px;
-		border-bottom-right-radius: 6px;
-	}
-
-	icon {
-		width: 20px;
-		height: 20px;
-	}
-
+@media screen and (max-width: 320px) {
 	btn {
-		height: 24px;
-		padding-left: 12px;
-		padding-right: 12px;
-	}
-
-	#playBtn .play {
-		margin-left: 2px;
-		margin-right: -2px;
-		width: 16px;
-		height: 16px;
-	}
-
-	#zoneBtns {
-		gap: 6px;
-	}
-
-	#logo {
-		height: 36px;
-	}
-
-	#logo img {
-		width: 36px;
-		height: 36px;
-		padding-left: 8px;
-		padding-right: 8px;
+		padding: 2px 8px;
 	}
 }

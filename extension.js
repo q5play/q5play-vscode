@@ -1,9 +1,12 @@
-const vscode = require('vscode');
-const Uri = vscode.Uri;
-const vsfs = vscode.workspace.fs;
-
-const os = require('os');
-const liveServer = require('live-server');
+const vscode = require('vscode'),
+	Uri = vscode.Uri,
+	vsfs = vscode.workspace.fs,
+	os = require('os'),
+	http = require('http'),
+	https = require('https'),
+	net = require('net'),
+	selfsigned = require('selfsigned'),
+	liveServer = require('live-server');
 
 let port = 5555;
 
@@ -14,36 +17,49 @@ let panel;
 function getLocalNetworkIPAddress() {
 	const interfaces = os.networkInterfaces();
 
-	// Prioritize local network Wi-Fi interfaces
-	const preferredInterfaces = ['en0', 'en1', 'en2', 'eth0', 'eth1', 'eth2', 'Wi-Fi', 'Wi-Fi 2', 'Wi-Fi 3'];
+	// Skip VPNs, tunnels, and virtual/VM interfaces — mobile devices can't reach these
+	const skipPrefixes = ['utun', 'tun', 'tap', 'vmnet', 'vboxnet', 'docker', 'br-', 'veth', 'lo'];
 
-	for (const connection of preferredInterfaces) {
-		if (interfaces[connection]) {
-			for (const iface of interfaces[connection]) {
-				if (iface.family === 'IPv4' && !iface.internal) {
-					return iface.address;
-				}
+	// 192.168.x.x is almost exclusively local Wi-Fi/LAN.
+	// 10.x.x.x and 172.16-31.x.x are also valid LAN ranges.
+	function lanPriority(addr) {
+		if (addr.startsWith('192.168.')) return 0;
+		if (addr.startsWith('10.')) return 1;
+		if (/^172\.(1[6-9]|2\d|3[01])\./.test(addr)) return 2;
+		return 3; // non-private, ignore
+	}
+
+	// Prefer known physical interface name prefixes
+	const physicalPrefixes = ['en', 'eth', 'Wi-Fi'];
+
+	let best = null; // { address, priority }
+
+	for (const [name, addrs] of Object.entries(interfaces)) {
+		if (skipPrefixes.some((p) => name.toLowerCase().startsWith(p))) continue;
+		const isPhysical = physicalPrefixes.some((p) => name.startsWith(p));
+
+		for (const iface of addrs) {
+			if (iface.family !== 'IPv4' || iface.internal) continue;
+			const priority = lanPriority(iface.address);
+			if (priority === 3) continue; // not a private address
+
+			// Prefer physical interfaces; within that, prefer lower priority number (better range)
+			const score = (isPhysical ? 0 : 10) + priority;
+			if (!best || score < best.score) {
+				best = { address: iface.address, score };
 			}
 		}
 	}
 
-	// Fallback to any other active interface
-	for (const connection in interfaces) {
-		for (const iface of interfaces[connection]) {
-			if (iface.family === 'IPv4' && !iface.internal) {
-				return iface.address;
-			}
-		}
-	}
-
-	return '0.0.0.0';
+	return best?.address || '0.0.0.0';
 }
 
-async function newProject() {
+async function newProject(type = 'q5play') {
 	try {
+		const label = type === 'p5play' ? 'p5play (legacy)' : 'q5play';
 		// Prompt the user for a new folder name
 		const folderName = await vscode.window.showInputBox({
-			prompt: 'Enter a name for the new p5play project folder',
+			prompt: `Enter a name for the new ${label} project folder`,
 			validateInput: (text) => (text.trim() === '' ? 'Folder name cannot be empty' : null)
 		});
 		if (!folderName) return;
@@ -60,7 +76,7 @@ async function newProject() {
 		const dest = Uri.joinPath(Uri.file(filePath[0].path), folderName);
 		await vscode.workspace.fs.createDirectory(dest);
 
-		const src = Uri.joinPath(Uri.file(__dirname), 'p5play-template');
+		const src = Uri.joinPath(Uri.file(__dirname), type === 'p5play' ? 'p5play-template' : 'q5play-template');
 
 		const success = await copyDirectory(src, dest);
 		if (!success) {
@@ -107,6 +123,81 @@ async function copyDirectory(srcDir, destDir) {
 }
 
 let serverStarted = false;
+let httpsServer;
+let httpsPort;
+
+/**
+ * Generates a self-signed cert with the local IP as a SAN and starts an
+ * HTTPS reverse-proxy in front of the HTTP live-server.  Mobile browsers
+ * need HTTPS to get a secure context (required for WebGPU / navigator.gpu).
+ */
+async function startHttpsProxy(httpPort, localIP) {
+	if (localIP === '0.0.0.0') return;
+
+	const pems = await selfsigned.generate([{ name: 'commonName', value: localIP }], {
+		keySize: 2048,
+		days: 825, // max iOS accepts without an extra trust step
+		algorithm: 'sha256',
+		extensions: [
+			{
+				name: 'subjectAltName',
+				altNames: [
+					{ type: 7, ip: localIP }, // IP SAN — required for Chrome/Safari
+					{ type: 2, value: 'localhost' } // DNS SAN
+				]
+			}
+		]
+	});
+
+	const credentials = { key: pems.private, cert: pems.cert };
+
+	// Forward regular HTTP requests to live-server
+	httpsServer = https.createServer(credentials, (req, res) => {
+		const options = {
+			hostname: '127.0.0.1',
+			port: httpPort,
+			path: req.url,
+			method: req.method,
+			headers: { ...req.headers, host: `127.0.0.1:${httpPort}` }
+		};
+		const proxyReq = http.request(options, (proxyRes) => {
+			res.writeHead(proxyRes.statusCode, proxyRes.headers);
+			proxyRes.pipe(res);
+		});
+		proxyReq.on('error', () => res.end());
+		req.pipe(proxyReq);
+	});
+
+	// Forward WebSocket upgrades (live-server's live-reload)
+	httpsServer.on('upgrade', (req, socket, head) => {
+		const conn = net.connect(httpPort, '127.0.0.1', () => {
+			const headerLines = Object.entries(req.headers)
+				.map(([k, v]) => `${k}: ${v}`)
+				.join('\r\n');
+			conn.write(`GET ${req.url} HTTP/1.1\r\n${headerLines}\r\n\r\n`);
+			if (head.length) conn.write(head);
+			conn.pipe(socket);
+			socket.pipe(conn);
+		});
+		conn.on('error', () => socket.destroy());
+		socket.on('error', () => conn.destroy());
+	});
+
+	const maxTries = 10;
+	let proxyPort = httpPort + 1;
+	for (let i = 0; i < maxTries; i++, proxyPort++) {
+		try {
+			await new Promise((resolve, reject) => {
+				httpsServer.listen(proxyPort, '0.0.0.0', resolve);
+				httpsServer.once('error', reject);
+			});
+			httpsPort = proxyPort;
+			return;
+		} catch {
+			continue;
+		}
+	}
+}
 
 async function startLiveServer() {
 	if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
@@ -121,6 +212,7 @@ async function startLiveServer() {
 	function tryStartServer(port) {
 		return new Promise((resolve, reject) => {
 			const params = {
+				host: '127.0.0.1', // HTTPS proxy handles external connections
 				port,
 				root: workspaceFolder,
 				open: false, // don't open in the browser
@@ -143,31 +235,42 @@ async function startLiveServer() {
 	while (attempts < maxAttempts) {
 		try {
 			await tryStartServer(port);
-			return;
+			break;
 		} catch (err) {
 			attempts++;
 			port++;
 		}
 	}
 
-	vscode.window.showErrorMessage('Failed to start live server on any port.');
+	if (attempts >= maxAttempts) {
+		vscode.window.showErrorMessage('Failed to start live server on any port.');
+		return;
+	}
+
+	await startHttpsProxy(port, getLocalNetworkIPAddress());
 }
 
 async function openTab() {
 	if (!serverStarted) await startLiveServer();
 
-	panel = vscode.window.createWebviewPanel('p5play', 'p5play', vscode.ViewColumn.Two, {
+	panel = vscode.window.createWebviewPanel('q5play', 'q5play', vscode.ViewColumn.Two, {
 		enableScripts: true,
 		localResourceRoots: [vscode.Uri.file(__dirname)]
 	});
+	// Set the webview tab icon (uses the extension's icon)
+	try {
+		panel.iconPath = Uri.file(__dirname + '/assets/q5play_logo.svg');
+	} catch (e) {
+		// Some older VS Code API versions may not support `iconPath` — ignore failures
+	}
 
-	const htmlPath = Uri.file(__dirname + '/editor/index.html');
+	const htmlPath = Uri.file(__dirname + '/runner/index.html');
 	let html = await vsfs.readFile(htmlPath);
 	html = Buffer.from(html).toString('utf8');
 
 	// get sandboxed file path
 	function getSource(file) {
-		const path = Uri.file(__dirname + '/editor/' + file);
+		const path = Uri.file(__dirname + '/runner/' + file);
 		return panel.webview.asWebviewUri(path);
 	}
 	function importHTML(file, fileToReplace) {
@@ -176,13 +279,13 @@ async function openTab() {
 
 	html = html.replace('<link rel="stylesheet" href="icons.css">', '');
 
-	importHTML('editor.css');
-	importHTML('editor.js');
+	importHTML('runner.css');
+	importHTML('runner.js');
 	importHTML('../node_modules/@bitjson/qr-code/dist/qr-code.js');
-	importHTML('../assets/p5play_icon.png');
-	importHTML('../assets/p5play_logo.svg');
+	importHTML('../assets/q5play_icon.png');
+	importHTML('../assets/q5play_logo.svg');
 
-	const cssPath = Uri.file(__dirname + '/editor/icons.css');
+	const cssPath = Uri.file(__dirname + '/runner/icons.css');
 	let style = await vsfs.readFile(cssPath);
 	style = Buffer.from(style).toString('utf8');
 	function importStyle(file, fileToReplace) {
@@ -212,9 +315,14 @@ async function openTab() {
 		importStyle('icons/' + file + '.svg');
 	}
 
+	// Fix the hardcoded port in the iframe src
+	html = html.replace('http://127.0.0.1:5555/', `http://127.0.0.1:${port}/`);
+
 	let globals = `
 <script>
 window.ipAddress = '${getLocalNetworkIPAddress()}';
+window.port = ${port};
+window.httpsPort = ${httpsPort ?? 'undefined'};
 </script>`;
 
 	const startOfHead = html.indexOf('<head>') + 6;
@@ -226,7 +334,7 @@ window.ipAddress = '${getLocalNetworkIPAddress()}';
 	panel.webview.onDidReceiveMessage(async (message) => {
 		switch (message.command) {
 			case 'newProject':
-				await newProject();
+				await newProject(message.type);
 				break;
 			case 'openInBrowser':
 				// open the live server link in the default browser
@@ -245,19 +353,19 @@ window.ipAddress = '${getLocalNetworkIPAddress()}';
 }
 
 function activate(context) {
-	let cmd = vscode.commands.registerCommand('p5play-vscode.newProject', newProject);
+	let cmd = vscode.commands.registerCommand('q5play-vscode.newProject', newProject);
 	context.subscriptions.push(cmd);
 
-	cmd = vscode.commands.registerCommand('p5play-vscode.openEditor', openTab);
+	cmd = vscode.commands.registerCommand('q5play-vscode.openRunner', openTab);
 	context.subscriptions.push(cmd);
 
 	// for testing, remove this line to disable auto-open
-	// vscode.commands.executeCommand('p5play-vscode.openEditor');
+	// vscode.commands.executeCommand('q5play-vscode.openRunner');
 
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
-	statusBar.text = '$(game) p5play';
-	statusBar.tooltip = 'Click to open the p5play sidebar.';
-	statusBar.command = 'p5play-vscode.openEditor';
+	statusBar.text = '$(game) q5play';
+	statusBar.tooltip = 'Click to open the q5play runner.';
+	statusBar.command = 'q5play-vscode.openRunner';
 	statusBar.show();
 
 	context.subscriptions.push(statusBar);
@@ -266,6 +374,7 @@ function activate(context) {
 function deactivate() {
 	if (panel) panel.dispose();
 	if (serverStarted) liveServer.shutdown();
+	if (httpsServer) httpsServer.close();
 }
 
 module.exports = {

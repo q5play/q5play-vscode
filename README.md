@@ -1,22 +1,31 @@
-# <img src="assets/p5play_icon.png" height="32px"> p5play-vscode
+# q5play VSCode
 
-Use this extension to easily create and run p5play projects in Visual Studio Code.
+Use this extension to easily create and run q5play projects in Visual Studio Code.
 
-![p5play-vscode](assets/p5play-vscode.png)
+![q5play-vscode](assets/q5play-vscode.png)
 
-## Create a new p5play project
+## Create a new q5play project
 
 1. Open a new window in Visual Studio Code
-2. Find "p5play" in the bottom status bar and click it.
-3. When the p5play tab opens, click "Create a new p5play project"
+2. Find "q5play" in the bottom status bar and click it.
+3. When the q5play tab opens, click "Create a new q5play project"
 4. Enter the name of the project and then select the destination folder.
 5. Happy coding! 🎉😃🎮
 
-The [p5play-template](https://github.com/quinton-ashley/p5play-template) folder contains a basic p5play project that you can run offline.
+The [q5play-template](https://github.com/q5play/q5play-template) folder contains a basic q5play project that you can run offline.
+
+## Video Demonstration
+
+<video controls width="800">
+  <source src="https://raw.githubusercontent.com/q5play/q5play-assets/main/q5play_vscode.mp4" type="video/mp4">
+  <p>
+    <a href="https://github.com/q5play/q5play-assets/blob/main/q5play_vscode.mp4">Watch the video demo</a>
+  </p>
+</video>
 
 ## Run your project
 
-If you have a p5play project folder open in VSCode, simply click "p5play" in the bottom status bar. A live server will start and your project will run inside the p5play tab.
+If you have a q5play project folder open in VSCode, simply click "q5play" in the bottom status bar. A live server will start and your project will run inside the q5play tab.
 
 Click the play icon in the nav or save any changes to your project files to re-run your project.
 
@@ -26,7 +35,7 @@ Click the debug icon in the nav to open the VSCode Dev Tools panel, which is jus
 
 ## View on Mobile
 
-Click the mobile icon in nav to generate a QR code. Scan it with your phone camera's to run your project with your phone's web browser!
+Click the mobile icon in nav to generate a QR code. Scan it with your phone camera to run your project with your phone's web browser!
 
 ## View in Browser
 
@@ -34,11 +43,12 @@ Click the browser icon in the nav to open your project in your default web brows
 
 ## Command Palette Usage
 
-Alternatively, you can use the VSCode command palette, open with `Ctrl+Shift+P` or `Cmd+Shift+P`, and start by typing `p5play`.
+Alternatively, you can use the VSCode command palette, open with `Ctrl+Shift+P` or `Cmd+Shift+P`, and start by typing `q5play`.
 
 Available commands:
 
-- "p5play: New Project"
+- "q5play: New Project"
+- "q5play: Open Runner"
 
 ## Development
 

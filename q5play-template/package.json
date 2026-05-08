@@ -1,0 +1,19 @@
+{
+	"name": "q5play-template",
+	"version": "1.1.1",
+	"description": "Starter code for q5play projects",
+	"author": "q5play",
+	"license": "CC0",
+	"dependencies": {
+		"q5play": "^4.1.1",
+		"box2d3-wasm": "5.2.0",
+		"q5": "^4.6.4"
+	},
+	"scripts": {
+		"v": "npm version patch --force",
+		"V": "npm version minor --force",
+		"dist": "rsync -av --exclude='.git' . ~/dev/ext/q5play-vscode/q5play-template",
+		"version": "git add -A",
+		"postversion": "git push"
+	}
+}

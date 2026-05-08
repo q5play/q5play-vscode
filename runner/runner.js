@@ -1,5 +1,5 @@
 /**
- * p5play-vscode/editor/editor.js
+ * q5play-vscode/runner/runner.js
  * Runs in the VSCode webview
  * @author quinton-ashley
  */
@@ -11,8 +11,12 @@ if (typeof acquireVsCodeApi == 'function') vscode = acquireVsCodeApi();
 
 /* NEW PROJECT */
 
-document.getElementById('newProjectBtn').addEventListener('click', () => {
-	vscode.postMessage({ command: 'newProject' });
+document.getElementById('newQ5ProjectBtn').addEventListener('click', () => {
+	vscode.postMessage({ command: 'newProject', type: 'q5play' });
+});
+
+document.getElementById('newP5ProjectBtn').addEventListener('click', () => {
+	vscode.postMessage({ command: 'newProject', type: 'p5play' });
 });
 
 /* NAV */
@@ -106,7 +110,7 @@ async function genMobileQRCode() {
 	qr0 = document.createElement('qr-code');
 	qr0.id = 'qr0';
 	qr0.innerHTML = qrDiv.innerHTML;
-	qr0.contents = 'http://' + window?.ipAddress + ':5555';
+	qr0.contents = 'https://' + window?.ipAddress + ':' + window?.httpsPort;
 	qr0.moduleColor = 'var(--pink)';
 	qr0.positionRingColor = 'var(--pink)';
 	qr0.positionCenterColor = 'var(--blue)';
@@ -127,7 +131,7 @@ async function genMobileQRCode() {
 	qrDiv.innerHTML = '';
 	qrDiv.append(qr0);
 
-	let url = document.createElement('p');
+	let url = document.createElement('span');
 	url.innerHTML = qr0.contents;
 
 	qrDiv.append(url);

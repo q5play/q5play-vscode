@@ -4,9 +4,9 @@
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>p5play</title>
-	<link rel="icon" href="../assets/p5play_icon.png" />
-	<link rel="stylesheet" href="editor.css">
+	<title>q5play</title>
+	<link rel="icon" href="../assets/q5play_icon.png" />
+	<link rel="stylesheet" href="runner.css">
 	<link rel="stylesheet" href="icons.css">
 </head>
 
@@ -24,7 +24,7 @@
 				</btn> -->
 		</div>
 		<btn id="logo">
-			<img src="../assets/p5play_logo.svg" slot="icon" draggable="false">
+			<img src="../assets/q5play_logo.svg" slot="icon" draggable="false">
 		</btn>
 		<div id="zoneBtns">
 			<btn id="mobileZoneBtn" title="View on a Mobile Device">
@@ -44,18 +44,21 @@
 
 	<div id="newProjectZone" class="zone">
 		<div class="contents">
-			<img id="logo1" class="grayFilter" src="../assets/p5play_logo.svg" slot="icon" draggable="false">
-			<btn id="newProjectBtn" title="Create a new p5play project">
-
+			<img id="logo1" class="grayFilter" src="../assets/q5play_logo.svg" slot="icon" draggable="false">
+			<btn id="newQ5ProjectBtn" title="Create a new q5play project">
 				<icon class="create-new-folder"></icon>
-				<p>Create a new p5play project</p>
+				<p>Create a new q5play project</p>
+			</btn>
+			<btn id="newP5ProjectBtn" title="Create a new p5play (legacy) project">
+				<icon class="create-new-folder"></icon>
+				<p>Create a new p5play (legacy) project</p>
 			</btn>
 		</div>
 	</div>
 
 	<div id="mobileZone" class="zone">
 		<div id="qrDiv" class="contents">
-			<img src="../assets/p5play_logo.svg" slot="icon">
+			<img src="../assets/q5play_logo.svg" slot="icon">
 		</div>
 	</div>
 
@@ -63,6 +66,6 @@
 </body>
 
 <script src="../node_modules/@bitjson/qr-code/dist/qr-code.js"></script>
-<script src="editor.js"></script>
+<script src="runner.js"></script>
 
 </html>
