@@ -2,13 +2,88 @@ const vscode = require('vscode'),
 	Uri = vscode.Uri,
 	vsfs = vscode.workspace.fs,
 	os = require('os'),
+	fs = require('fs'),
+	path = require('path'),
 	http = require('http'),
 	https = require('https'),
-	net = require('net'),
-	selfsigned = require('selfsigned'),
-	liveServer = require('live-server');
+	crypto = require('crypto'),
+	asn1 = require('@panva/asn1.js');
 
 let port = 5555;
+
+const mimeTypes = {
+	// Text / markup
+	'.html': 'text/html; charset=utf-8',
+	'.htm': 'text/html; charset=utf-8',
+	'.xhtml': 'application/xhtml+xml',
+	'.xml': 'application/xml; charset=utf-8',
+	'.txt': 'text/plain; charset=utf-8',
+	'.md': 'text/markdown; charset=utf-8',
+	'.csv': 'text/csv; charset=utf-8',
+	// Scripts
+	'.js': 'application/javascript; charset=utf-8',
+	'.mjs': 'application/javascript; charset=utf-8',
+	'.cjs': 'application/javascript; charset=utf-8',
+	'.ts': 'application/typescript; charset=utf-8',
+	'.jsx': 'application/javascript; charset=utf-8',
+	'.tsx': 'application/javascript; charset=utf-8',
+	// Styles
+	'.css': 'text/css; charset=utf-8',
+	// Data
+	'.json': 'application/json; charset=utf-8',
+	'.jsonc': 'application/json; charset=utf-8',
+	'.jsonld': 'application/ld+json',
+	'.yaml': 'text/yaml; charset=utf-8',
+	'.yml': 'text/yaml; charset=utf-8',
+	'.toml': 'application/toml; charset=utf-8',
+	'.map': 'application/json',
+	'.webmanifest': 'application/manifest+json',
+	// WebAssembly
+	'.wasm': 'application/wasm',
+	// Images
+	'.png': 'image/png',
+	'.jpg': 'image/jpeg',
+	'.jpeg': 'image/jpeg',
+	'.gif': 'image/gif',
+	'.svg': 'image/svg+xml',
+	'.ico': 'image/x-icon',
+	'.webp': 'image/webp',
+	'.avif': 'image/avif',
+	'.bmp': 'image/bmp',
+	'.tiff': 'image/tiff',
+	'.tif': 'image/tiff',
+	// Fonts
+	'.woff': 'font/woff',
+	'.woff2': 'font/woff2',
+	'.ttf': 'font/ttf',
+	'.otf': 'font/otf',
+	'.eot': 'application/vnd.ms-fontobject',
+	// Audio
+	'.mp3': 'audio/mpeg',
+	'.ogg': 'audio/ogg',
+	'.oga': 'audio/ogg',
+	'.wav': 'audio/wav',
+	'.flac': 'audio/flac',
+	'.aac': 'audio/aac',
+	'.m4a': 'audio/mp4',
+	'.opus': 'audio/opus',
+	'.mid': 'audio/midi',
+	'.midi': 'audio/midi',
+	// Video
+	'.mp4': 'video/mp4',
+	'.webm': 'video/webm',
+	'.ogv': 'video/ogg',
+	'.mov': 'video/quicktime',
+	'.avi': 'video/x-msvideo',
+	'.mkv': 'video/x-matroska',
+	'.m4v': 'video/mp4',
+	// Misc
+	'.pdf': 'application/pdf'
+};
+
+const LIVERELOAD_SCRIPT = `<script>(function(){var es=new EventSource('/livereload-events');es.onmessage=function(){location.reload();};es.onerror=function(){es.close();setTimeout(function(){location.reload();},2000);};})();</script>`;
+
+let sseClients = [];
 
 const log = console.log;
 
@@ -123,33 +198,151 @@ async function copyDirectory(srcDir, destDir) {
 }
 
 let serverStarted = false;
+let httpServer;
 let httpsServer;
 let httpsPort;
+let fileWatcher;
 
 /**
- * Generates a self-signed cert with the local IP as a SAN and starts an
- * HTTPS reverse-proxy in front of the HTTP live-server.  Mobile browsers
+ * Generates a self-signed X.509 cert using Node.js built-ins and @panva/asn1.js.
+ * This provides a robust, spec-compliant encoder with zero transitive dependencies.
+ */
+function generateSelfSignedCert(ip) {
+	// Generate EC P-256 key pair
+	const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', {
+		namedCurve: 'prime256v1'
+	});
+
+	// SubjectPublicKeyInfo DER — already correctly encoded by Node.js crypto
+	const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+
+	// --- ASN.1 structure definitions ---
+
+	const AlgorithmIdentifier = asn1.define('AlgorithmIdentifier', function () {
+		this.seq().obj(this.key('algorithm').objid(), this.key('parameters').optional().any());
+	});
+
+	const ATAV = asn1.define('ATAV', function () {
+		this.seq().obj(this.key('type').objid(), this.key('value').any());
+	});
+
+	const RDN = asn1.define('RDN', function () {
+		this.setof(ATAV);
+	});
+
+	const Name = asn1.define('Name', function () {
+		this.seqof(RDN);
+	});
+
+	const Validity = asn1.define('Validity', function () {
+		this.seq().obj(this.key('notBefore').utctime(), this.key('notAfter').utctime());
+	});
+
+	const Extension = asn1.define('Extension', function () {
+		this.seq().obj(this.key('extnID').objid(), this.key('critical').bool().def(false), this.key('extnValue').octstr());
+	});
+
+	const Extensions = asn1.define('Extensions', function () {
+		this.seqof(Extension);
+	});
+
+	// subjectPublicKeyInfo and tbsCertificate are passed as raw DER via .any()
+	// to avoid re-encoding and guarantee byte-for-byte identity when signing.
+	const TBSCertificate = asn1.define('TBSCertificate', function () {
+		this.seq().obj(
+			this.key('version').explicit(0).int(),
+			this.key('serialNumber').int(),
+			this.key('signature').use(AlgorithmIdentifier),
+			this.key('issuer').use(Name),
+			this.key('validity').use(Validity),
+			this.key('subject').use(Name),
+			this.key('subjectPublicKeyInfo').any(),
+			this.key('extensions').explicit(3).use(Extensions)
+		);
+	});
+
+	const Certificate = asn1.define('Certificate', function () {
+		this.seq().obj(
+			this.key('tbsCertificate').any(), // pass pre-encoded DER directly
+			this.key('signatureAlgorithm').use(AlgorithmIdentifier),
+			this.key('signatureValue').bitstr()
+		);
+	});
+
+	// OIDs
+	const OID_ECDSA_SHA256 = [1, 2, 840, 10045, 4, 3, 2];
+	const OID_COMMON_NAME = [2, 5, 4, 3];
+	const OID_SAN = [2, 5, 29, 17];
+
+	// CN value encoded as UTF8String (tag 0x0C)
+	const cnBytes = Buffer.from('q5play', 'utf8');
+	const cnValue = Buffer.concat([Buffer.from([0x0c, cnBytes.length]), cnBytes]);
+
+	// SAN extension value: GeneralNames { iPAddress [7] IMPLICIT <4 octets> }
+	const ipOctets = Buffer.from(ip.split('.').map(Number));
+	const iPAddressTagged = Buffer.concat([Buffer.from([0x87, ipOctets.length]), ipOctets]);
+	const sanValue = Buffer.concat([Buffer.from([0x30, iPAddressTagged.length]), iPAddressTagged]);
+
+	// Validity window: now → now + 1 year
+	const now = new Date();
+	const notAfter = new Date(now);
+	notAfter.setFullYear(notAfter.getFullYear() + 1);
+
+	// Random 128-bit serial number (always positive BigInt)
+	const serialNumber = BigInt('0x' + crypto.randomBytes(16).toString('hex'));
+
+	const algId = { algorithm: OID_ECDSA_SHA256 };
+	const name = [[{ type: OID_COMMON_NAME, value: cnValue }]];
+
+	// Encode TBSCertificate
+	const tbsDer = TBSCertificate.encode(
+		{
+			version: 2n, // v3
+			serialNumber,
+			signature: algId,
+			issuer: name,
+			validity: { notBefore: now.getTime(), notAfter: notAfter.getTime() },
+			subject: name,
+			subjectPublicKeyInfo: spkiDer,
+			extensions: [{ extnID: OID_SAN, critical: false, extnValue: sanValue }]
+		},
+		'der'
+	);
+
+	// Sign the TBSCertificate bytes
+	const sig = crypto.sign('SHA256', tbsDer, privateKey);
+
+	// Encode the outer Certificate structure
+	const certDer = Certificate.encode(
+		{
+			tbsCertificate: tbsDer,
+			signatureAlgorithm: algId,
+			signatureValue: { data: sig, unused: 0 }
+		},
+		'der'
+	);
+
+	// PEM output
+	const certPem =
+		'-----BEGIN CERTIFICATE-----\n' +
+		certDer
+			.toString('base64')
+			.match(/.{1,64}/g)
+			.join('\n') +
+		'\n-----END CERTIFICATE-----';
+	const keyPem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+
+	return { cert: certPem, key: keyPem };
+}
+
+/**
+ * Starts an HTTPS reverse-proxy in front of the HTTP server. Mobile browsers
  * need HTTPS to get a secure context (required for WebGPU / navigator.gpu).
  */
 async function startHttpsProxy(httpPort, localIP) {
 	if (localIP === '0.0.0.0') return;
 
-	const pems = await selfsigned.generate([{ name: 'commonName', value: localIP }], {
-		keySize: 2048,
-		days: 825, // max iOS accepts without an extra trust step
-		algorithm: 'sha256',
-		extensions: [
-			{
-				name: 'subjectAltName',
-				altNames: [
-					{ type: 7, ip: localIP }, // IP SAN — required for Chrome/Safari
-					{ type: 2, value: 'localhost' } // DNS SAN
-				]
-			}
-		]
-	});
-
-	const credentials = { key: pems.private, cert: pems.cert };
+	const credentials = generateSelfSignedCert(localIP);
 
 	// Forward regular HTTP requests to live-server
 	httpsServer = https.createServer(credentials, (req, res) => {
@@ -168,21 +361,6 @@ async function startHttpsProxy(httpPort, localIP) {
 		req.pipe(proxyReq);
 	});
 
-	// Forward WebSocket upgrades (live-server's live-reload)
-	httpsServer.on('upgrade', (req, socket, head) => {
-		const conn = net.connect(httpPort, '127.0.0.1', () => {
-			const headerLines = Object.entries(req.headers)
-				.map(([k, v]) => `${k}: ${v}`)
-				.join('\r\n');
-			conn.write(`GET ${req.url} HTTP/1.1\r\n${headerLines}\r\n\r\n`);
-			if (head.length) conn.write(head);
-			conn.pipe(socket);
-			socket.pipe(conn);
-		});
-		conn.on('error', () => socket.destroy());
-		socket.on('error', () => conn.destroy());
-	});
-
 	const maxTries = 10;
 	let proxyPort = httpPort + 1;
 	for (let i = 0; i < maxTries; i++, proxyPort++) {
@@ -199,59 +377,118 @@ async function startHttpsProxy(httpPort, localIP) {
 	}
 }
 
-async function startLiveServer() {
-	if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
-		return;
-	}
+function injectLiveReload(data) {
+	const html = data.toString('utf8');
+	const i = html.lastIndexOf('</body>');
+	if (i !== -1) return html.slice(0, i) + LIVERELOAD_SCRIPT + html.slice(i);
+	return html + LIVERELOAD_SCRIPT;
+}
 
-	const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
+async function startServer() {
+	if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) return;
 
-	const maxAttempts = 10; // Maximum number of ports to try
-	let attempts = 0;
+	const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+	const rootWithSep = workspaceRoot.endsWith(path.sep) ? workspaceRoot : workspaceRoot + path.sep;
 
-	function tryStartServer(port) {
-		return new Promise((resolve, reject) => {
-			const params = {
-				host: '127.0.0.1', // HTTPS proxy handles external connections
-				port,
-				root: workspaceFolder,
-				open: false, // don't open in the browser
-				ignore: 'node_modules',
-				file: 'index.html',
-				wait: 0 // wait time before reloading
-			};
+	httpServer = http.createServer((req, res) => {
+		// SSE endpoint for live reload
+		if (req.url === '/livereload-events') {
+			res.writeHead(200, {
+				'Content-Type': 'text/event-stream',
+				'Cache-Control': 'no-cache',
+				Connection: 'keep-alive',
+				'Access-Control-Allow-Origin': '*'
+			});
+			res.write('retry: 2000\n\n');
+			sseClients.push(res);
+			req.on('close', () => {
+				sseClients = sseClients.filter((c) => c !== res);
+			});
+			return;
+		}
 
-			liveServer
-				.start(params)
-				.on('listening', () => {
-					resolve(port);
-				})
-				.on('error', (err) => {
-					reject(err);
-				});
+		// Strip query string and decode URL
+		let urlPath = req.url.split('?')[0];
+		try {
+			urlPath = decodeURIComponent(urlPath);
+		} catch {}
+		if (urlPath === '/') urlPath = '/index.html';
+
+		// Security: prevent path traversal
+		const filePath = path.join(workspaceRoot, urlPath);
+		if (!filePath.startsWith(rootWithSep) && filePath !== workspaceRoot) {
+			res.writeHead(403);
+			res.end('Forbidden');
+			return;
+		}
+
+		const ext = path.extname(filePath).toLowerCase();
+		fs.readFile(filePath, (err, data) => {
+			if (err) {
+				if (err.code === 'ENOENT' || err.code === 'EISDIR') {
+					// SPA fallback: serve index.html
+					fs.readFile(path.join(workspaceRoot, 'index.html'), (err2, fallback) => {
+						if (err2) {
+							res.writeHead(404);
+							res.end('Not Found');
+							return;
+						}
+						res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+						res.end(injectLiveReload(fallback));
+					});
+				} else {
+					res.writeHead(500);
+					res.end('Server Error');
+				}
+				return;
+			}
+			const contentType = mimeTypes[ext] || 'application/octet-stream';
+			res.writeHead(200, { 'Content-Type': contentType });
+			res.end(ext === '.html' ? injectLiveReload(data) : data);
 		});
-	}
+	});
 
+	const maxAttempts = 10;
+	let attempts = 0;
 	while (attempts < maxAttempts) {
 		try {
-			await tryStartServer(port);
+			await new Promise((resolve, reject) => {
+				httpServer.listen(port, '127.0.0.1', resolve);
+				httpServer.once('error', reject);
+			});
 			break;
-		} catch (err) {
+		} catch {
 			attempts++;
 			port++;
 		}
 	}
 
 	if (attempts >= maxAttempts) {
-		vscode.window.showErrorMessage('Failed to start live server on any port.');
+		vscode.window.showErrorMessage('Failed to start server on any port.');
 		return;
 	}
 
+	serverStarted = true;
 	await startHttpsProxy(port, getLocalNetworkIPAddress());
+
+	// Watch workspace files and notify SSE clients to trigger live reload
+	fileWatcher = vscode.workspace.createFileSystemWatcher(
+		new vscode.RelativePattern(vscode.workspace.workspaceFolders[0], '**/*')
+	);
+	const notifyReload = () => {
+		for (const client of sseClients) {
+			try {
+				client.write('data: reload\n\n');
+			} catch {}
+		}
+	};
+	fileWatcher.onDidChange(notifyReload);
+	fileWatcher.onDidCreate(notifyReload);
+	fileWatcher.onDidDelete(notifyReload);
 }
 
 async function openTab() {
-	if (!serverStarted) await startLiveServer();
+	if (!serverStarted) await startServer();
 
 	panel = vscode.window.createWebviewPanel('q5play', 'q5play', vscode.ViewColumn.Two, {
 		enableScripts: true,
@@ -282,7 +519,6 @@ async function openTab() {
 	importHTML('runner.css');
 	importHTML('runner.js');
 	importHTML('../node_modules/@bitjson/qr-code/dist/qr-code.js');
-	importHTML('../assets/q5play_icon.png');
 	importHTML('../assets/q5play_logo.svg');
 
 	const cssPath = Uri.file(__dirname + '/runner/icons.css');
@@ -373,7 +609,8 @@ function activate(context) {
 
 function deactivate() {
 	if (panel) panel.dispose();
-	if (serverStarted) liveServer.shutdown();
+	if (fileWatcher) fileWatcher.dispose();
+	if (httpServer) httpServer.close();
 	if (httpsServer) httpsServer.close();
 }
 

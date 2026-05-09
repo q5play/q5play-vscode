@@ -135,4 +135,14 @@ async function genMobileQRCode() {
 	url.innerHTML = qr0.contents;
 
 	qrDiv.append(url);
+
+	// Show TLS / self-signed certificate note for mobile users
+	let tlsNote = document.createElement('div');
+	tlsNote.id = 'tlsNote';
+	tlsNote.style.marginTop = '8px';
+	tlsNote.style.fontSize = '0.9em';
+	tlsNote.style.color = 'var(--muted-text, #666)';
+	tlsNote.textContent =
+		'Note: q5.js WebGPU uses a self-signed certificate; your mobile device may show security warnings. This is expected for local development — you can safely ignore these warnings to run the sketch.';
+	qrDiv.append(tlsNote);
 }
