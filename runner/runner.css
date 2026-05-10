@@ -236,11 +236,6 @@ pre {
 	align-items: center;
 }
 
-#qr img {
-	width: 360px;
-	height: 360px;
-}
-
 #qr0 {
 	width: 360px;
 	height: 360px;
@@ -278,6 +273,12 @@ pre {
 
 #newProjectZone .contents:hover #logo1 {
 	filter: none;
+}
+
+#tlsNote {
+	padding: 8px;
+	font-size: 0.9em;
+	color: var(--muted-text, #666);
 }
 
 @media screen and (max-width: 320px) {

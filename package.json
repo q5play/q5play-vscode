@@ -47,7 +47,7 @@
 		"type": "git",
 		"url": "https://github.com/q5play/q5play-vscode.git"
 	},
-	"version": "2.0.0",
+	"version": "2.0.1",
 	"__metadata": {
 		"id": "91a3a7ba-83a7-4910-919a-d1c0a8667c67",
 		"publisherDisplayName": "quinton-ashley",
