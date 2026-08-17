@@ -49,9 +49,3 @@ Available commands:
 
 - "q5play: New Project"
 - "q5play: Open Runner"
-
-## Development
-
-Run and debug the extension using Visual Studio Code.
-
-To package the extension, run `vsce package` and then `vsce publish` in the terminal.
