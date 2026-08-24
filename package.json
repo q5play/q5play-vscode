@@ -47,7 +47,7 @@
 		"type": "git",
 		"url": "https://github.com/q5play/q5play-vscode.git"
 	},
-	"version": "2.0.2",
+	"version": "2.0.3",
 	"__metadata": {
 		"id": "91a3a7ba-83a7-4910-919a-d1c0a8667c67",
 		"publisherDisplayName": "quinton-ashley",
@@ -59,6 +59,7 @@
 		"V": "npm version minor --force",
 		"version": "git add -A",
 		"postversion": "git push",
+		"sync": "rsync -av --exclude='.git' ~/dev/demos/q5play-template .",
 		"dist": "vsce package && vsce publish"
 	},
 	"dependencies": {
